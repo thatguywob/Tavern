@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import gettext
-import threading
 
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Adw, Gtk, Gio, GLib, GObject
+from gi.repository import Adw, Gtk, Gio, GObject
 from .backend import BrewBackend
+from .backend_lifecycle import BackendLifecycle
 from .task_manager import TaskManager
 from .logging_util import get_logger
 from .page_factory import PageFactory
@@ -169,28 +169,20 @@ class TavernWindow(Adw.ApplicationWindow):
 
         self.connect('close-request', self._on_close)
 
-        # Periodic outdated check honoring the user-configured interval
-        interval_h = max(1, self._settings.get_int('outdated-check-interval-hours') or 24)
-        GLib.timeout_add_seconds(interval_h * 3600, self._periodic_outdated_check)
-
         # Start loading
         backend_load_start = time.perf_counter()
         self.backend.connect('formulae-loaded', self._on_formulae_loaded)
         self.backend.connect('casks-loaded', self._on_casks_loaded)
         self.backend.connect('installed-loaded', self._on_installed_loaded)
         self.backend.connect('notify::loading', self._on_backend_loading_changed)
-        _log.info('Kicking off backend.load_all_async()')
-        self.backend.load_all_async()
+        self.backend_lifecycle = BackendLifecycle(
+            self.backend, self.task_manager, self._settings)
+        self.backend_lifecycle.start()
         backend_load_time = (time.perf_counter() - backend_load_start) * 1000
         _log.info('Backend.load_all_async() started: %.1f ms', backend_load_time)
         
         total_init_time = (time.perf_counter() - init_start) * 1000
         _log.info('TavernWindow.__init__: completed in %.1f ms', total_init_time)
-
-    def _periodic_outdated_check(self):
-        if self._settings.get_boolean('outdated-check-enabled'):
-            threading.Thread(target=self.backend._check_outdated, daemon=True).start()
-        return True  # keep the timer active
 
     def _find_package_by_name(self, package_name):
         target = (package_name or '').strip().lower()
@@ -236,8 +228,6 @@ class TavernWindow(Adw.ApplicationWindow):
         if pkg is None:
             self.toast_overlay.add_toast(Adw.Toast.new(
                 task.title + ': ' + task.status_text))
-            if mgr.active_count == 0:
-                self.backend.refresh_installed_async()
             return
         if task.status == TaskStatus.COMPLETED:
             verb = _('Installed') if task.operation == 'install' else (
@@ -257,9 +247,6 @@ class TavernWindow(Adw.ApplicationWindow):
                 ))
         # Refresh installed page
         self.installed_page.refresh(self.backend)
-        if mgr.active_count == 0:
-            _log.info('All queued tasks finished; refreshing installed state')
-            self.backend.refresh_installed_async()
 
     def _on_active_count_changed(self, mgr, pspec):
         count = mgr.active_count
@@ -552,7 +539,7 @@ class TavernWindow(Adw.ApplicationWindow):
     def _on_refresh(self, action, param):
         _log.info('Manual refresh triggered')
         self.browse_page.set_loading()
-        self.backend.load_all_async()
+        self.backend_lifecycle.refresh()
         self.toast_overlay.add_toast(Adw.Toast.new(_('Refreshing package list…')))
 
     def _on_open_brewfile(self, action, param):
@@ -662,6 +649,7 @@ class TavernWindow(Adw.ApplicationWindow):
         _log.info('Added Brewfile tab: %s', title)
 
     def _on_close(self, *args):
+        self.backend_lifecycle.stop()
         w, h = self.get_default_size()
         self._settings.set_int('window-width', w)
         self._settings.set_int('window-height', h)

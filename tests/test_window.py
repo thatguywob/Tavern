@@ -113,15 +113,15 @@ def test_window_workflows(tmp_path, monkeypatch):
     win._on_task_added(win.task_manager, task1)
     
     # Trigger task-finished success (install)
-    win._on_task_finished(win.task_manager, MockTask(pkg_rg, 'install', TaskStatus.COMPLETED))
+    win.task_manager.emit('task-finished', MockTask(pkg_rg, 'install', TaskStatus.COMPLETED))
     assert backend_reload_calls == [True]
     # Trigger task-finished success (uninstall)
     win.task_manager.active_count = 1
-    win._on_task_finished(win.task_manager, MockTask(pkg_rg, 'uninstall', TaskStatus.COMPLETED))
+    win.task_manager.emit('task-finished', MockTask(pkg_rg, 'uninstall', TaskStatus.COMPLETED))
     assert backend_reload_calls == [True]
     # Trigger task-finished success (upgrade)
     win.task_manager.active_count = 0
-    win._on_task_finished(win.task_manager, MockTask(pkg_rg, 'upgrade', TaskStatus.COMPLETED))
+    win.task_manager.emit('task-finished', MockTask(pkg_rg, 'upgrade', TaskStatus.COMPLETED))
     assert backend_reload_calls == [True, True]
     # Trigger task-finished failed
     win._on_task_finished(win.task_manager, MockTask(pkg_rg, 'install', TaskStatus.FAILED))

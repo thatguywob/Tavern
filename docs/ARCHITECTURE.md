@@ -58,6 +58,14 @@ dialog and gives it the shared `backend` and `task_manager`. The window does
 not call page constructors. Refer to
 [ADR-0002](adr/0002-page-factory.md).
 
+**Backend lifecycle.** `BackendLifecycle` (`backend_lifecycle.py`) coordinates
+initial and manual catalog loading, the periodic outdated check, and installed
+state refresh after the task queue drains. It takes the shared backend, task
+manager, and settings without depending on widgets. The window wires its view
+callbacks before starting the lifecycle, and stops it on close to release the
+timer and task subscription. It does not cancel running package operations.
+Navigation, deep-link routing, and task feedback remain in the window.
+
 **Backend.** `BrewBackend` does all I/O. It is the source of truth for the
 catalog, the installed packages, the taps, and the outdated packages. It is a
 GObject, thus pages can bind to its properties and connect to its signals. It
@@ -117,8 +125,9 @@ into phases that the user can read, and it sets the progress bar of each
 `Package`. On successful install, upgrade, or removal, `TaskManager` records
 the package through `BrewBackend.set_package_installed()`; it does not mutate
 the backend's private catalog sets. The backend owns the state update through
-its `CatalogStore`. At the end of a task, the window calls
-`backend.refresh_installed_async()`.
+its `CatalogStore`. When the task queue drains, `BackendLifecycle` calls
+`backend.refresh_installed_async()` after view callbacks have had a chance to
+queue follow-up work.
 
 ### Media URLs
 
@@ -157,6 +166,7 @@ state. `_icon_lock` protects the map of icon downloads in progress.
 | `main.py` | entry point | Loads the gresource bundle, then starts `TavernApplication`. |
 | `application.py` | application | The `Adw.Application`, command-line and `brew://` links, the GNOME search action, and the cache refresh thread. |
 | `window.py` | UI | `TavernWindow`. It owns `BrewBackend` and `TaskManager`, connects page signals, and shows toasts and badges. |
+| `backend_lifecycle.py` | coordination | Catalog loading, periodic outdated checks, and refresh after tasks finish. |
 | `page_factory.py` | UI | `PageFactory`. It makes pages and dialogs with their dependencies. |
 | `package_details.py` | UI | Package presentation and user actions; delegates asset requests, README transforms, and task signal lifecycle. |
 | `asset_loader.py` | UI/backend boundary | Coordinates icon and screenshot requests and drops stale page callbacks. |
@@ -192,5 +202,5 @@ state. `_icon_lock` protects the map of icon downloads in progress.
    `MediaMixin` callbacks. The analytics and related packages come from
    `RemoteMixin`.
 4. An install goes through `TaskManager`. It sends the `brew` output to the
-   progress bar. At the end, the window refreshes the installed packages and
-   the outdated badge.
+   progress bar. When the queue drains, `BackendLifecycle` refreshes installed state;
+   the pages and window update the installed packages and outdated badge.
