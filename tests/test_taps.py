@@ -573,6 +573,70 @@ class TestTapTrust:
         fn(*args)
         assert results == [None]
 
+    @pytest.mark.parametrize(('response', 'expected'), [
+        (MockCompletedProcess(0, '{"taps": []}'), False),
+        (MockCompletedProcess(0, '{"taps": ["u/t"]}'), True),
+        (MockCompletedProcess(0, '{"taps": ["v/w"]}'), False),
+        (MockCompletedProcess(1, ''), None),
+        (FileNotFoundError('brew'), None),
+        (taps_mod.subprocess.TimeoutExpired('brew', 10), None),
+        (MockCompletedProcess(0, '{'), None),
+        (MockCompletedProcess(0, '[]'), None),
+        (MockCompletedProcess(0, '{}'), None),
+        (MockCompletedProcess(0, '{"taps": null}'), None),
+        (MockCompletedProcess(0, '{"taps": "u/t"}'), None),
+        (MockCompletedProcess(0, '{"taps": ["u/t", 1]}'), None),
+        (MockCompletedProcess(0, '{"taps": [{}]}'), None),
+    ])
+    def test_both_readers_normalize_trust_results(self, host, idle, fake_thread, monkeypatch, response, expected):
+        def fake_run(cmd, **kwargs):
+            if cmd[1] == 'tap-info':
+                return MockCompletedProcess(1, '')
+            if isinstance(response, Exception):
+                raise response
+            return response
+
+        monkeypatch.setattr(taps_mod.subprocess, 'run', fake_run)
+        results = []
+        host.check_tap_trust_async('u/t', results.append)
+        thread = fake_thread.pop()
+        thread.target(*thread.args)
+        assert len(idle) == 1
+        fn, args, _ = idle.pop()
+        fn(*args)
+        assert results == [expected]
+
+        host._tap_list = [{'name': 'u/t', 'path': '/x'}]
+        emitted = []
+        host.connect('taps-loaded', lambda _host, packages: emitted.append(packages))
+        host._load_tap_trust_status()
+        thread = fake_thread.pop()
+        thread.target(*thread.args)
+        assert host._tap_list[0]['trusted'] is expected
+        assert len(idle) == 1
+        fn, args, _ = idle.pop()
+        fn(*args)
+        assert emitted == [{}]
+
+    @pytest.mark.parametrize(('tap_info', 'bulk', 'expected'), [
+        ('[{"trusted": true}]', '{"taps": []}', True),
+        ('[{"trusted": false}]', '{"taps": ["u/t"]}', False),
+        ('[{"trusted": true}]', '{}', True),
+        ('[{}]', '{"taps": []}', False),
+        ('[{"trusted": null}]', '{"taps": ["u/t"]}', True),
+        ('[{"trusted": "false"}]', '{"taps": []}', False),
+        ('[{}]', '{}', None),
+        ('[null]', '{}', None),
+        ('not json', '{"taps": []}', False),
+    ])
+    def test_tap_info_precedence_and_fallback(self, host, idle, monkeypatch, tap_info, bulk, expected):
+        host._tap_list = [{'name': 'u/t', 'path': '/x'}]
+        monkeypatch.setattr(taps_mod.subprocess, 'run', lambda cmd, **kwargs:
+                            MockCompletedProcess(0, bulk if cmd[1] == 'trust' else tap_info))
+        host._load_tap_trust_status_thread()
+        assert host._tap_list[0]['trusted'] is expected
+        assert len(idle) == 1
+
     def test_trust_tap_success(self, host, idle, fake_thread, monkeypatch):
         monkeypatch.setattr(taps_mod.subprocess, 'run',
                             lambda *a, **k: MockCompletedProcess(0, 'trusted ok'))

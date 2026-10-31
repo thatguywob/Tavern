@@ -26,6 +26,23 @@ GITHUB_TAP_SEARCH_URL = (
 _CORE_TAPS = frozenset({'homebrew/core', 'homebrew/cask'})
 
 
+def _read_trusted_taps(timeout):
+    """Return the authoritative set of trusted taps, or None if unavailable."""
+    try:
+        result = subprocess.run(
+            _brew_cmd(['trust', '--json=v1']),
+            capture_output=True, text=True, timeout=timeout,
+        )
+        if result.returncode == 0:
+            data = json.loads(result.stdout)
+            if isinstance(data, dict):
+                taps = data.get('taps')
+                if isinstance(taps, list) and all(isinstance(tap, str) for tap in taps):
+                    return set(taps)
+    except Exception as e:
+        _log.debug('brew trust --json=v1 unavailable or invalid: %s', e)
+    return None
+
 
 class TapsMixin:
     """Tap-related behavior mixed into BrewBackend."""
@@ -259,7 +276,7 @@ class TapsMixin:
     def check_tap_trust_async(self, tap_name, callback):
         """Check if a tap is trusted. callback(trusted: bool|None).
 
-        Returns None if the trust command is unavailable (pre-6.0.0).
+        Returns None if the trust command is unavailable or its output is invalid.
         """
         thread = threading.Thread(
             target=self._check_tap_trust_thread,
@@ -270,22 +287,10 @@ class TapsMixin:
 
     def _check_tap_trust_thread(self, tap_name, callback):
         """Check trust by parsing `brew trust --json=v1` output."""
-        try:
-            result = subprocess.run(
-                _brew_cmd(['trust', '--json=v1']),
-                capture_output=True, text=True, timeout=15,
-            )
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                if isinstance(data, dict):
-                    trusted = tap_name in data.get('taps', [])
-                    _log.debug('check_tap_trust %s: %s', tap_name, trusted)
-                    GLib.idle_add(callback, trusted)
-                    return
-            GLib.idle_add(callback, None)
-        except (FileNotFoundError, subprocess.SubprocessError) as e:
-            _log.debug('brew trust unavailable (pre-6.0.0?): %s', e)
-            GLib.idle_add(callback, None)
+        trusted_taps = _read_trusted_taps(timeout=15)
+        trusted = tap_name in trusted_taps if trusted_taps is not None else None
+        _log.debug('check_tap_trust %s: %s', tap_name, trusted)
+        GLib.idle_add(callback, trusted)
 
     def trust_tap_async(self, tap_name, callback=None):
         """Trust a tap by its remote URL. callback(success, message)."""
@@ -344,19 +349,8 @@ class TapsMixin:
 
     def _load_tap_trust_status_thread(self):
         _log.debug('Loading tap trust status for %d taps', len(self._tap_list))
-        # Fetch the full trusted-taps list once
-        trusted_taps = set()
-        try:
-            result = subprocess.run(
-                _brew_cmd(['trust', '--json=v1']),
-                capture_output=True, text=True, timeout=10,
-            )
-            if result.returncode == 0:
-                data = json.loads(result.stdout)
-                if isinstance(data, dict):
-                    trusted_taps = set(data.get('taps', []))
-        except Exception as e:
-            _log.debug('brew trust --json=v1 failed: %s', e)
+        # None means unavailable; an empty set is an authoritative result.
+        trusted_taps = _read_trusted_taps(timeout=10)
 
         for tap in self._tap_list:
             tap_name = tap.get('name', '')
@@ -370,13 +364,14 @@ class TapsMixin:
                 )
                 if result.returncode == 0:
                     data = json.loads(result.stdout)
-                    if isinstance(data, list) and data:
-                        tap['trusted'] = data[0].get('trusted')
+                    if (isinstance(data, list) and data and isinstance(data[0], dict)
+                            and isinstance(data[0].get('trusted'), bool)):
+                        tap['trusted'] = data[0]['trusted']
                         continue
             except Exception:
                 pass
             # Fallback: check against the trusted set
-            tap['trusted'] = tap_name in trusted_taps if trusted_taps else None
+            tap['trusted'] = tap_name in trusted_taps if trusted_taps is not None else None
             _log.debug('tap trust %s: %s', tap_name, tap.get('trusted'))
 
         # Emit taps-loaded again so UI can update trust icons

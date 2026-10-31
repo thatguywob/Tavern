@@ -1,6 +1,8 @@
 # test_tap_page.py
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+from types import SimpleNamespace
+
 import pytest
 from gi.repository import Gtk, GLib, Adw
 from tavern.tap_page import TavernTapPage, _fetch_avatar_pixbuf
@@ -23,6 +25,35 @@ requires_adw_spinner = pytest.mark.skipif(
     not hasattr(Adw, 'Spinner'),
     reason='needs libadwaita >= 1.6 for Adw.Spinner (used by src/task_panel.py)',
 )
+
+def test_empty_trust_list_shows_sidebar_warning(monkeypatch):
+    import tavern.taps as taps_mod
+
+    backend = BrewBackend()
+    backend._tap_list = [{'name': 'user/tap', 'path': '/fake/path'}]
+    backend._tap_packages = {}
+    monkeypatch.setattr(taps_mod, '_brew_cmd', lambda args: ['brew'] + args)
+    monkeypatch.setattr(taps_mod.subprocess, 'run', lambda cmd, **kwargs:
+                        SimpleNamespace(returncode=0, stdout='{"taps": []}')
+                        if cmd[1] == 'trust' else SimpleNamespace(returncode=1, stdout=''))
+    monkeypatch.setattr(taps_mod.GLib, 'idle_add', lambda fn, *args: fn(*args))
+
+    # Build the same real GTK sidebar row without requiring the full page's
+    # Adw.Spinner, which is unavailable on older supported host runtimes.
+    page = SimpleNamespace(_backend=backend)
+    page._apply_trust_icon = lambda row, info: TavernTapPage._apply_trust_icon(page, row, info)
+    rows = []
+    backend.connect('taps-loaded', lambda _backend, _packages:
+                    rows.append(TavernTapPage._make_tap_row(page, 'user/tap', [])))
+    backend._load_tap_trust_status_thread()
+
+    assert len(rows) == 1
+    icon = rows[0]._trust_icon
+    assert icon.get_visible()
+    assert icon.get_icon_name() == 'changes-prevent-symbolic'
+    assert icon.has_css_class('warning')
+    assert 'not trusted' in icon.get_tooltip_text()
+
 
 @requires_adw_spinner
 def test_tap_page_workflows(tmp_path, monkeypatch):
