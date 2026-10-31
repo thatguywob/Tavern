@@ -2,12 +2,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 import gettext
+import threading
 
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Adw, Gtk, Gio, GObject
+from gi.repository import Adw, Gtk, Gio, GLib, GObject
 from .backend import BrewBackend
 from .backend_lifecycle import BackendLifecycle
 from .task_manager import TaskManager

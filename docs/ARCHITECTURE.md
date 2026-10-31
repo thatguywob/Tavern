@@ -58,13 +58,14 @@ dialog and gives it the shared `backend` and `task_manager`. The window does
 not call page constructors. Refer to
 [ADR-0002](adr/0002-page-factory.md).
 
-**Backend lifecycle.** `BackendLifecycle` (`backend_lifecycle.py`) coordinates
-initial and manual catalog loading, the periodic outdated check, and installed
-state refresh after the task queue drains. It takes the shared backend, task
-manager, and settings without depending on widgets. The window wires its view
-callbacks before starting the lifecycle, and stops it on close to release the
-timer and task subscription. It does not cancel running package operations.
-Navigation, deep-link routing, and task feedback remain in the window.
+**Backend lifecycle.** `BackendLifecycle` (`backend_lifecycle.py`) controls
+the initial and manual catalog loads, the periodic outdated check, and the
+refresh of installed state after the task queue drains. It takes the shared
+backend, task manager, and settings, and it does not use widgets. The window
+connects its view callbacks before it starts the lifecycle. On close, the window
+stops the lifecycle to release the timer and the task subscription; package
+operations in progress continue. Navigation, deep links, and task feedback
+stay in the window.
 
 **Backend.** `BrewBackend` does all I/O. It is the source of truth for the
 catalog, the installed packages, the taps, and the outdated packages. It is a
@@ -124,7 +125,7 @@ install, remove, and upgrade. The window and all pages use one
 into phases that the user can read, and it sets the progress bar of each
 `Package`. On successful install, upgrade, or removal, `TaskManager` records
 the package through `BrewBackend.set_package_installed()`; it does not mutate
-the backend's private catalog sets. The backend owns the state update through
+the backend's private catalog sets, because the backend owns that state through
 its `CatalogStore`. When the task queue drains, `BackendLifecycle` calls
 `backend.refresh_installed_async()` after view callbacks have had a chance to
 queue follow-up work.
