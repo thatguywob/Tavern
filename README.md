@@ -131,14 +131,14 @@ flatpak run org.tunaos.tavern 'brew://tap/tuna-os/homebrew-tap'
 flatpak run org.tunaos.tavern --brewfile="$HOME/Brewfile"
 ```
 
-Quote paths containing spaces and use a Brewfile path accessible to Tavern
-(inside the sandbox for Flatpak). On macOS, pass arguments to the installed app
+Put quotes around paths with spaces, and use a Brewfile path that Tavern can
+read (inside the sandbox for Flatpak). On macOS, pass arguments to the installed app
 with, for example, `open -a Tavern --args --package ripgrep`. For development,
-`./run.sh --package ripgrep` forwards arguments after building and installing.
+`./run.sh --package ripgrep` builds and installs Tavern, then forwards the arguments.
 
 For desktop shortcuts or scripts, pass the link to Tavern as shown above. An
-installed desktop `brew://` handler can also route links to Tavern, depending on
-your desktop's default-app settings. Ordinary HTTPS links usually open in a web
+installed desktop `brew://` handler can also send links to Tavern if your
+desktop's default-app settings select it. Ordinary HTTPS links usually open in a web
 browser unless explicitly passed to Tavern. The supported URI schemes here are
 `brew://` and the specific `https://formulae.brew.sh/` forms above; do not assume
 `homebrew://` links work.
