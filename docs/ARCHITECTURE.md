@@ -64,8 +64,14 @@ refresh of installed state after the task queue drains. It takes the shared
 backend, task manager, and settings, and it does not use widgets. The window
 connects its view callbacks before it starts the lifecycle. On close, the window
 stops the lifecycle to release the timer and the task subscription; package
-operations in progress continue. Navigation, deep links, and task feedback
-stay in the window.
+operations in progress continue. Navigation and task feedback stay in the window.
+
+**Deep links.** `DeepLinkRouter` (`deeplink_router.py`) resolves package and tap
+targets against the current catalog, retries pending targets as data arrives,
+and opens a pending Brewfile when loading finishes. It has no widget imports:
+view callbacks show packages, select taps, report misses, and present qualified
+tap choices. `tap_choice_dialog.py` renders those choices and returns a selected
+qualified name to the router, which queues the install through an injected action.
 
 **Backend.** `BrewBackend` does all I/O. It is the source of truth for the
 catalog, the installed packages, the taps, and the outdated packages. It is a
@@ -168,6 +174,8 @@ state. `_icon_lock` protects the map of icon downloads in progress.
 | `application.py` | application | The `Adw.Application`, command-line and `brew://` links, the GNOME search action, and the cache refresh thread. |
 | `window.py` | UI | `TavernWindow`. It owns `BrewBackend` and `TaskManager`, connects page signals, and shows toasts and badges. |
 | `backend_lifecycle.py` | coordination | Catalog loading, periodic outdated checks, and refresh after tasks finish. |
+| `deeplink_router.py` | coordination | Widget-free package/tap lookup, pending deep links, and qualified tap selection. |
+| `tap_choice_dialog.py` | UI | Renders qualified tap choices and returns the selection to the router. |
 | `page_factory.py` | UI | `PageFactory`. It makes pages and dialogs with their dependencies. |
 | `package_details.py` | UI | Package presentation and user actions; delegates asset requests, README transforms, and task signal lifecycle. |
 | `asset_loader.py` | UI/backend boundary | Coordinates icon and screenshot requests and drops stale page callbacks. |
