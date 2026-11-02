@@ -67,10 +67,10 @@ stops the lifecycle to release the timer and the task subscription; package
 operations in progress continue. Navigation and task feedback stay in the window.
 
 **Deep links.** `DeepLinkRouter` (`deeplink_router.py`) resolves package and tap
-targets against the current catalog, retries pending targets as data arrives,
-and opens a pending Brewfile when loading finishes. It has no widget imports:
-view callbacks show packages, select taps, report misses, and present qualified
-tap choices. `tap_choice_dialog.py` renders those choices and returns a selected
+targets against the current catalog. It retries unresolved targets as data arrives
+and opens a queued Brewfile after the catalog loads. It has no widget imports.
+View callbacks show packages, select taps, report misses, and show choices of
+qualified taps. `tap_choice_dialog.py` renders those choices and returns a selected
 qualified name to the router, which queues the install through an injected action.
 
 **Backend.** `BrewBackend` does all I/O. It is the source of truth for the
